@@ -284,7 +284,12 @@ cluster_cells_make_graph <- function(data,
 
   nn_method <- nn_control[['method']]
   if(nn_method == 'nn2') {
-    t1 <- system.time(tmp <- RANN::nn2(data, data, k+1, searchtype = "standard"))
+    if (verbose) {
+      t1 <- system.time(tmp <- RANN::nn2(data, data, k+1, searchtype = "standard"))
+      message("DONE. Run time: ", t1[3], "s\n")
+    } else {
+      tmp <- RANN::nn2(data, data, k+1, searchtype = "standard")
+    }
   }
   else {
     if(is.null(nn_index)) {
@@ -304,16 +309,15 @@ cluster_cells_make_graph <- function(data,
   distMatrix <- tmp[['nn.dists']][, -1]
 
   if (verbose) {
-    if(nn_method == 'nn2') {
-      message("DONE. Run time: ", t1[3], "s\n")
-    }
     message("Compute jaccard coefficient between nearest-neighbor sets ..." )
   }
 
-  t2 <- system.time(links <- jaccard_coeff(neighborMatrix, weight))
-
-  if (verbose)
+  if (verbose) {
+    t2 <- system.time(links <- jaccard_coeff(neighborMatrix, weight))
     message("DONE. Run time:", t2[3], "s\n", " Build undirected graph from the weighted links ...")
+  } else {
+    links <- jaccard_coeff(neighborMatrix, weight)
+  }
 
   links <- links[links[, 1] > 0,]
   relations <- as.data.frame(links)
@@ -322,10 +326,13 @@ cluster_cells_make_graph <- function(data,
   relations$from <- cell_names[relations$from]
   relations$to <- cell_names[relations$to]
 
-  t3 <- system.time(g <- igraph::graph.data.frame(relations, directed = FALSE))
 
-  if (verbose)
+  if (verbose) {
+    t3 <- system.time(g <- igraph::graph.data.frame(relations, directed = FALSE))
     message("DONE ~", t3[3], "s\n")
+  } else {
+    g <- igraph::graph.data.frame(relations, directed = FALSE)
+  }
 
   return(list(g=g, distMatrix=distMatrix, relations=relations))
 }
