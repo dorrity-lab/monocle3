@@ -122,10 +122,7 @@ order_cells <- function(cds,
       }
     }
   } else if(!is.null(root_cells)){
-    closest_vertex <- cds@principal_graph_aux[[
-      reduction_method]]$pr_graph_cell_proj_closest_vertex
-    root_pr_nodes <- unique(paste("Y_", closest_vertex[root_cells,], sep=""))
-    #principal_graph(cds)[[reduction_method]]
+    root_pr_nodes <- root_cells
   }
 
   cds@principal_graph_aux[[reduction_method]]$root_pr_nodes <- root_pr_nodes
@@ -155,12 +152,7 @@ extract_general_graph_ordering <- function(cds,
     igraph::E(pr_graph)$weight <- 1
   }
 
-  # do pseudotime calculation on the cell-wise graph
-  # 1. identify nearest cells to the selected principal node
-  # 2. build a cell-wise graph for each Louvain group
-  # 3. run the distance function to assign pseudotime for each cell
-  closest_vertex <- find_nearest_vertex(Y[, root_pr_nodes, drop = FALSE], Z)
-  closest_vertex_id <- colnames(cds)[closest_vertex]
+  closest_vertex_id <- root_pr_nodes
 
   cell_wise_graph <-
     cds@principal_graph_aux[[reduction_method]]$pr_graph_cell_proj_tree
@@ -172,7 +164,7 @@ extract_general_graph_ordering <- function(cds,
     pseudotimes <- apply(cell_wise_distances, 2, min)
   }else{
     node_names <- names(cell_wise_distances)
-    pseudotimes <- cell_wise_distances
+    pseudotimes <- t(cell_wise_distances)[,1] 
   }
 
   names(pseudotimes) <- node_names
