@@ -277,7 +277,7 @@ learn_graph <- function(cds,
   principal_graph(cds)[[reduction_method]] <- dp_mst
   cds@principal_graph_aux[[reduction_method]]$dp_mst <- rge_res_Y
 
-  cds <- project2MST(cds, project_point_to_line_segment, orthogonal_proj_tip,
+  cds <- project2MST(cds, orthogonal_proj_tip,
                      verbose, reduction_method, rge_res_Y)
 
   cds
@@ -720,7 +720,7 @@ prune_tree <- function(stree_ori, stree_loop_closure,
   return(igraph::get.adjacency(stree_loop_closure))
 }
 
-project2MST <- function(cds, Projection_Method, orthogonal_proj_tip = FALSE,
+project2MST <- function(cds, orthogonal_proj_tip = FALSE,
                         verbose, reduction_method, rge_res_Y){
   target <- group <- distance_2_source <- rowname <- NULL # no visible binding
   dp_mst <- principal_graph(cds)[[reduction_method]]
@@ -735,13 +735,13 @@ project2MST <- function(cds, Projection_Method, orthogonal_proj_tip = FALSE,
 
   tip_leaves <- names(which(igraph::degree(dp_mst) == 1))
 
-  if(!is.function(Projection_Method)) {
-    P <- Y[, closest_vertex]
-  } else {
+  if (TRUE) {
     if(length(Z) < 1) warning('bad loop: length(Z) < 1')
     P <- matrix(rep(0, length(Z)), nrow = nrow(Z)) #Y
     if(length(Z[1:2, ]) < 1) warning('bad loop: length(Z[1:2, ]) < 1')
-    nearest_edges <- matrix(rep(0, length(Z[1:2, ])), ncol = 2)
+    distances_2_source <- rep(0, ncol(Z))
+    names(distances_2_source) <- colnames(cds)
+    nearest_edges <- matrix(rep(0, ncol(Z)*2), ncol = 2)
     row.names(nearest_edges) <-  colnames(cds)
     if(length(closest_vertex) < 1) warning('bad loop: length(closest_vertex) < 1')
     for(i in 1:length(closest_vertex)) { # This loop is going to be slow
@@ -749,27 +749,52 @@ project2MST <- function(cds, Projection_Method, orthogonal_proj_tip = FALSE,
                                               nodes = closest_vertex_names[i],
                                               mode = 'all')[[1]])[-1]
       projection <- NULL
+      deltas <- NULL
       distance <- NULL
       Z_i <- Z[, i]
 
       for(neighbor in neighbors) {
-        if(closest_vertex_names[i] %in% tip_leaves) {
-          if(orthogonal_proj_tip) {
-            tmp <- projPointOnLine(Z_i, Y[, c(closest_vertex_names[i],
-                                              neighbor)])
-          } else {
-            tmp <- Projection_Method(Z_i, Y[, c(closest_vertex_names[i],
-                                                neighbor)])
-          }
+        point <- Z_i
+        V1 <- closest_vertex_names[i]
+        V2 <- neighbor
+        if (V1 < V2) {
+          A <- Y[, V1]
+          B <- Y[, V2]
         } else {
-          tmp <- Projection_Method(Z_i, Y[, c(closest_vertex_names[i],
-                                              neighbor)])
+          A <- Y[, V2]
+          B <- Y[, V1]
         }
-        if(any(is.na(tmp))) {
-          tmp <- Y[, neighbor]
+        clamp <- (V1 %in% tip_leaves) && !orthogonal_proj_tip
+  
+        # vector from A to B
+        AB <- (B-A)
+        # squared distance from A to B
+        AB_squared = sum(AB^2)
+        if(AB_squared == 0) {
+          # A and B are the same point
+          unclamped_delta <- 0.0
+        }	else {
+          # vector from A to p
+          Ap <- (point-A)
+          # from http://stackoverflow.com/questions/849211/
+          # Consider the line extending the segment, parameterized as A + delta (B - A)
+          # We find projection of point p onto the line.
+          # It falls where delta = [(p-A) . (B-A)] / |B-A|^2
+          # delta <- max(0, min(1, sum(Ap * AB) / AB_squared))
+          unclamped_delta <- sum(Ap * AB) / AB_squared
         }
-        projection <- rbind(projection, tmp)
-        distance <- c(distance, stats::dist(rbind(Z_i, tmp)))
+        clamped_delta <- max(0, min(1, unclamped_delta))
+        q <- A + clamped_delta * AB
+        projection <- rbind(projection, q)
+        # using the unclamped delta here means we can avoid discontinuities at steep turns
+        if (clamp) {
+          final_delta <- clamped_delta
+        } else {
+          final_delta <- unclamped_delta
+        }
+        deltas <- rbind(deltas, final_delta * sqrt(AB_squared))
+        # we still need the clamped delta (used to calc q) for correctly assigning edges though
+        distance <- c(distance, stats::dist(rbind(Z_i, q)))
       }
       if(class(projection)[1] != 'matrix') {
         projection <- as.matrix(projection)
@@ -778,7 +803,15 @@ project2MST <- function(cds, Projection_Method, orthogonal_proj_tip = FALSE,
       which_min <- which.min(distance)
 
       P[, i] <- projection[which_min, ]
-      nearest_edges[i, ] <- c(closest_vertex_names[i], neighbors[which_min])
+      distances_2_source[i] <- deltas[which_min]
+
+      V1 <- closest_vertex_names[i]
+      V2 <- neighbors[which_min]
+      if (V1 < V2) {
+        nearest_edges[i, ] <- c(V1, V2)
+      } else {
+        nearest_edges[i, ] <- c(V2, V1)
+      }
     }
   }
 
@@ -826,59 +859,46 @@ project2MST <- function(cds, Projection_Method, orthogonal_proj_tip = FALSE,
           igraph::V(dp_mst_list[[as.numeric(cur_partition)]])$name
 
         cur_nearest_edges <- nearest_edges[subset_cds_col_names, ]
-        data_df <- cbind(as.data.frame(t(cur_p)),
-                         apply(cur_nearest_edges, 1, sort) %>% t())
-        row.names(data_df) <- colnames(cur_p)
+        data_df <- as.data.frame(cur_nearest_edges)
+
         if(nrow(cur_p) < 1) warning('bad loop: nrow(cur_p) < 1')
-        colnames(data_df) <- c(paste0("P_", 1:nrow(cur_p)), 'source', 'target')
+        colnames(data_df) <- c('source', 'target')
+        
+        data_df$type = "b_cell"
+        data_df$rowname <- subset_cds_col_names
+        data_df$distance_2_source <- distances_2_source[subset_cds_col_names]
+
+        edge_list <- as.data.frame(igraph::get.edgelist(dp_mst_list[[as.numeric(cur_partition)]]) %>% apply(1, sort) %>% t, stringsAsFactors=FALSE)
+        edge_list -> target_edge_list
+        edge_list -> source_edge_list
+
+        source_edge_list$type = "a_source"
+        source_edge_list$rowname = source_edge_list$V1
+        source_edge_list$distance_2_source <- 0
+        source_edge_list <- source_edge_list[,c("V1", "V2", "type", "rowname", "distance_2_source")]
+        colnames(source_edge_list) <- colnames(data_df)
+        data_df <- rbind(data_df, source_edge_list)
+
+        target_edge_list$type = "c_target"
+        target_edge_list$rowname = target_edge_list$V2
+        target_edge_list$distance_2_source <- (Y[, target_edge_list$V2, drop=F] - Y[, target_edge_list$V1, drop=F])^2 %>% colSums %>% sqrt
+        target_edge_list <- target_edge_list[,c("V1", "V2", "type", "rowname", "distance_2_source")]
+        colnames(target_edge_list) <- colnames(data_df)
+        data_df <- rbind(data_df, target_edge_list)
 
         # sort each cell's distance to the source in each principal edge group
-        data_df$distance_2_source <-
-          sqrt(colSums((cur_p - rge_res_Y[,as.character(data_df[, 'source'])])^2))
-        data_df <- data_df %>% tibble::rownames_to_column() %>%
-          dplyr::mutate(group = paste(source, target, sep = '_')) %>%
-          dplyr::arrange(group, dplyr::desc(-distance_2_source))
+        data_df <- data_df %>% dplyr::mutate(group = paste(source, target, sep = '_')) %>%
+          dplyr::arrange(group, type, distance_2_source)
 
         # add the links from the source to the nearest points belong to the
         # principal edge and also all following connections between those
         # points
         data_df <- data_df %>% dplyr::group_by(group) %>%
-          dplyr::mutate(new_source = dplyr::lag(rowname), new_target = rowname)
-        # use the correct name of the source point
-        data_df[is.na(data_df$new_source), "new_source"] <-
-          as.character(as.matrix(data_df[is.na(data_df$new_source), 'source']))
+          dplyr::mutate(new_source = dplyr::lag(rowname), new_target = rowname, weight=pmax(0, distance_2_source - dplyr::lag(distance_2_source)))
+        # delete the first edge leading nowhere
+        data_df <- data_df[!is.na(data_df$new_source),]
 
-        # add the links from the last point on the principal edge to the target
-        # point of the edge
-        added_rows <- which(is.na(data_df$new_source) &
-                              is.na(data_df$new_target))
-        data_df <- as.data.frame(data_df, stringsAsFactors = FALSE)
-        data_df <- as.data.frame(as.matrix(data_df), stringsAsFactors = FALSE)
-        data_df[added_rows, c('new_source', 'new_target')] <-
-          data_df[added_rows - 1, c('rowname', 'target')]
-
-        # calculate distance between each pair
-        aug_P = cbind(cur_p, rge_res_Y)
-        data_df$weight <-  sqrt(colSums((aug_P[,
-                                               data_df$new_source] -
-                                           aug_P[, data_df$new_target]))^2)
-        # add the minimal positive distance between any points to the distance
-        # matrix
-        data_df$weight <-
-          data_df$weight + min(data_df$weight[data_df$weight > 0])
-
-        # Calculate distance between two connected nodes directly from the
-        # original graph
-        edge_list <- as.data.frame(igraph::get.edgelist(dp_mst_list[[
-          as.numeric(cur_partition)]]), stringsAsFactors=FALSE)
-        dp <- as.matrix(stats::dist(t(rge_res_Y)[cur_centroid_name,]))
-        edge_list$weight <- dp[cbind(edge_list[, 1], edge_list[, 2])]
-        colnames(edge_list) <- c("new_source", "new_target", 'weight')
-
-        dp_mst_df <- Reduce(rbind,
-                            list(dp_mst_df, data_df[, c("new_source",
-                                                        "new_target",
-                                                        'weight')], edge_list))
+        dp_mst_df <- rbind(dp_mst_df, data_df[, c("new_source", "new_target", "weight")])
       }
     }
   }
@@ -937,55 +957,6 @@ findNearestPointOnMST <- function(cds, reduction_method, rge_res_Y){
     reduction_method]]$pr_graph_cell_proj_closest_vertex <- closest_vertex_df
   cds
 }
-
-# Project point to line segment (in >= 2 dimensions)
-project_point_to_line_segment <- function(p, df){
-  # returns q the closest point to p on the line segment from A to B
-  A <- df[, 1]
-  B <- df[, 2]
-  # vector from A to B
-  AB <- (B-A)
-  # squared distance from A to B
-  AB_squared = sum(AB^2)
-  if(AB_squared == 0) {
-    # A and B are the same point
-    q <- A
-  }
-  else {
-    # vector from A to p
-    Ap <- (p-A)
-    # from http://stackoverflow.com/questions/849211/
-    # Consider the line extending the segment, parameterized as A + t (B - A)
-    # We find projection of point p onto the line.
-    # It falls where t = [(p-A) . (B-A)] / |B-A|^2
-    # t <- max(0, min(1, sum(Ap * AB) / AB_squared))
-    t <- sum(Ap * AB) / AB_squared
-
-    if (t < 0.0) {
-      # "Before" A on the line, just return A
-      q <- A
-    }
-    else if (t > 1.0) {
-      # "After" B on the line, just return B
-      q <- B
-    }
-    else {
-      # projection lines "inbetween" A and B on the line
-      q <- A + t * AB#
-    }
-  }
-  return(q)
-}
-
-#project points to a line (in  >= 2 dimensions)
-projPointOnLine <- function(point, line) {
-  ap <- point - line[, 1]
-  ab <- line[, 2] - line[, 1]
-
-  res <- line[, 1] + c((ap %*% ab) / (ab %*% ab)) * ab
-  return(res)
-}
-
 
 #' Function to automatically learn the structure of data by either using
 #' L1-graph or the spanning-tree formulization
