@@ -909,11 +909,6 @@ project2MST <- function(cds, orthogonal_proj_tip = FALSE,
   cds@principal_graph_aux[[reduction_method]]$pr_graph_cell_proj_tree <- dp_mst
   cds@principal_graph_aux[[reduction_method]]$pr_graph_cell_proj_dist <- P
 
-  closest_vertex_df <- as.matrix(closest_vertex)
-  row.names(closest_vertex_df) <- row.names(closest_vertex)
-  cds@principal_graph_aux[[
-    reduction_method]]$pr_graph_cell_proj_closest_vertex <- closest_vertex_df
-
   cds
 }
 
