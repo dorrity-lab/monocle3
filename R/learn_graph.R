@@ -35,7 +35,7 @@
 #'   \item{minimal_branch_len:}{The minimal length of the diameter path for a
 #'   branch to be preserved during graph pruning procedure. Default is 10.}
 #'   \item{orthogonal_proj_tip:}{ Whether to perform orthogonal projection for
-#'   cells corresponding to the tip principal points. Default is FALSE.}
+#'   cells corresponding to the tip principal points. Default is TRUE.}
 #'   \item{prune_graph:}{Whether or not to perform an additional round of graph
 #'   pruning to remove small insignificant branches. Default is TRUE.}
 #'   \item{scale:}{}
@@ -167,7 +167,7 @@ learn_graph <- function(cds,
     ifelse(is.null(learn_graph_control$minimal_branch_len), 10,
            learn_graph_control$minimal_branch_len)
   orthogonal_proj_tip <-
-    ifelse(is.null(learn_graph_control$orthogonal_proj_tip), FALSE,
+    ifelse(is.null(learn_graph_control$orthogonal_proj_tip), TRUE,
            learn_graph_control$orthogonal_proj_tip)
   prune_graph <- ifelse(is.null(learn_graph_control$prune_graph), TRUE,
                         learn_graph_control$prune_graph)
