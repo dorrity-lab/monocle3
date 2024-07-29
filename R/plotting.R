@@ -40,6 +40,8 @@ monocle_theme_opts <- function()
 #'   colors.
 #' @param color_scale The name of the color scale passed to plotly for coloring
 #'   cells by numeric scale. Default is "Viridis".
+#' @param cmin Minimum value for color scale.
+#' @param cmax Maximum value for color scale.
 #' @return a plotly plot object
 #' @export
 #'
@@ -63,6 +65,8 @@ plot_cells_3d <- function(cds,
                           norm_method = c("log", "size_only"),
                           color_palette = NULL,
                           color_scale = "Viridis",
+                          cmin=NULL,
+                          cmax=NULL,
                           #label_cell_groups = TRUE,#
                           #label_groups_by_cluster=TRUE,#
                           #group_label_size=2,#
@@ -255,6 +259,8 @@ plot_cells_3d <- function(cds,
                             colorbar = list(title = color_cells_by, len=0.5),
                             color=~cell_color,
                             colors=color_scale,
+                            cmin=cmin,
+                            cmax=cmax,
                             line=list(width = 1,
                                       color = ~cell_color,
                                       colorscale=color_scale),
