@@ -744,10 +744,13 @@ project2MST <- function(cds, orthogonal_proj_tip = FALSE,
     nearest_edges <- matrix(rep(0, ncol(Z)*2), ncol = 2)
     row.names(nearest_edges) <-  colnames(cds)
     if(length(closest_vertex) < 1) warning('bad loop: length(closest_vertex) < 1')
+    
+    neighbor_map <- igraph::adjacent_vertices(dp_mst,
+                                            v=colnames(Y),
+                                            mode='all') %>% lapply(names)
+    
     for(i in 1:length(closest_vertex)) { # This loop is going to be slow
-      neighbors <- names(igraph::neighborhood(dp_mst,
-                                              nodes = closest_vertex_names[i],
-                                              mode = 'all')[[1]])[-1]
+      neighbors <- neighbor_map[[closest_vertex_names[i]]]
       projection <- NULL
       deltas <- NULL
       distance <- NULL
