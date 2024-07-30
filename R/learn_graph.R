@@ -467,11 +467,15 @@ multi_component_RGE <- function(cds,
                                         list(rge_res$objective_vals))
     }
 
+    norm_X_sq <- matrix(colSums(rge_res$X^2), nrow=ncol(rge_res$X), ncol=ncol(rge_res$Y))
+    norm_C_sq <- matrix(t(colSums(rge_res$Y^2)), nrow=ncol(rge_res$X), ncol=ncol(rge_res$Y), byrow=TRUE)
+    dist_XC <- norm_X_sq + norm_C_sq - 2 * t(rge_res$X) %*% rge_res$Y
+    min_dist <- apply(dist_XC, 1, which.min)
+    
     if(is.null(reducedDimK_coord)) {
       if(ncol(rge_res$Y) < 1) warning('bad loop: ncol(rge_res$Y) < 1')
       curr_cell_names <- paste("Y_", 1:ncol(rge_res$Y), sep = "")
-      pr_graph_cell_proj_closest_vertex <- matrix(apply(rge_res$R, 1,
-                                                        which.max))
+      pr_graph_cell_proj_closest_vertex <- matrix(min_dist)
       cell_name_vec <- colnames(X_subset)
     } else {
       curr_cell_names <-
@@ -480,7 +484,7 @@ multi_component_RGE <- function(cds,
               sep = "")
       pr_graph_cell_proj_closest_vertex <-
         rbind(pr_graph_cell_proj_closest_vertex,
-              matrix(apply(rge_res$R, 1, which.max) + ncol(reducedDimK_coord)))
+              matrix(min_dist + ncol(reducedDimK_coord)))
       cell_name_vec <- c(cell_name_vec, colnames(X_subset))
     }
 
@@ -531,7 +535,7 @@ multi_component_RGE <- function(cds,
          history = merge_rge_res$history)
   cds@principal_graph_aux[[
     reduction_method]]$pr_graph_cell_proj_closest_vertex <-
-    as.data.frame(pr_graph_cell_proj_closest_vertex)[colnames(cds), , drop = FALSE]
+    pr_graph_cell_proj_closest_vertex[colnames(cds), , drop = FALSE]
   if(ncol(ddrtree_res_Y) < 1) warning('bad loop: ncol(ddrtree_res_Y) < 1')
   colnames(ddrtree_res_Y) <- paste0("Y_", 1:ncol(ddrtree_res_Y), sep = "")
 
@@ -727,7 +731,6 @@ project2MST <- function(cds, orthogonal_proj_tip = FALSE,
   Z <- t(SingleCellExperiment::reducedDims(cds)[[reduction_method]])
   Y <- rge_res_Y
 
-  cds <- findNearestPointOnMST(cds, reduction_method, rge_res_Y)
   closest_vertex <- cds@principal_graph_aux[[
     reduction_method]]$pr_graph_cell_proj_closest_vertex
 
@@ -907,50 +910,6 @@ project2MST <- function(cds, orthogonal_proj_tip = FALSE,
   cds@principal_graph_aux[[reduction_method]]$pr_graph_cell_proj_tree <- dp_mst
   cds@principal_graph_aux[[reduction_method]]$pr_graph_cell_proj_dist <- P
 
-  cds
-}
-
-# Project each point to the nearest on the MST:
-findNearestPointOnMST <- function(cds, reduction_method, rge_res_Y){
-  dp_mst <- principal_graph(cds)[[reduction_method]]
-  dp_mst_list <- igraph::decompose.graph(dp_mst)
-
-  if(length(unique(cds@clusters[[reduction_method]]$partitions)) !=
-     length(dp_mst_list)) {
-    dp_mst_list <- list(dp_mst)
-  }
-
-  closest_vertex_df <- NULL
-  cur_start_index <- 0
-
-  if(length(dp_mst_list) < 1) warning('bad loop: length(dp_mst_list) < 1')
-  for(i in 1:length(dp_mst_list)) {
-    cur_dp_mst <- dp_mst_list[[i]]
-
-    if(length(dp_mst_list) == 1) {
-      Z <- t(SingleCellExperiment::reducedDims(cds)[[reduction_method]])
-    } else {
-      Z <- t(SingleCellExperiment::reducedDims(cds)[[reduction_method]])[, cds@clusters[[
-        reduction_method]]$partitions == i]
-    }
-    Y <- rge_res_Y[, igraph::V(cur_dp_mst)$name]
-
-    tip_leaves <- names(which(igraph::degree(cur_dp_mst) == 1))
-
-    closest_vertex_ori <- find_nearest_vertex(Z, Y)
-    closest_vertex <- closest_vertex_ori + cur_start_index
-
-    closest_vertex_names <- colnames(Y)[closest_vertex_ori]
-    cur_name <- names(closest_vertex)
-    closest_vertex <- as.matrix(closest_vertex)
-    row.names(closest_vertex) <- cur_name #original cell names for projection
-    closest_vertex_df <- rbind(closest_vertex_df, closest_vertex) #index on Z
-
-    cur_start_index <- cur_start_index + igraph::vcount(cur_dp_mst)
-  }
-  closest_vertex_df <- closest_vertex_df[colnames(cds), , drop = FALSE]
-  cds@principal_graph_aux[[
-    reduction_method]]$pr_graph_cell_proj_closest_vertex <- closest_vertex_df
   cds
 }
 
