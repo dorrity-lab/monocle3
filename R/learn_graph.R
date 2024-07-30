@@ -735,86 +735,84 @@ project2MST <- function(cds, orthogonal_proj_tip = FALSE,
 
   tip_leaves <- names(which(igraph::degree(dp_mst) == 1))
 
-  if (TRUE) {
-    if(length(Z) < 1) warning('bad loop: length(Z) < 1')
-    P <- matrix(rep(0, length(Z)), nrow = nrow(Z)) #Y
-    if(length(Z[1:2, ]) < 1) warning('bad loop: length(Z[1:2, ]) < 1')
-    distances_2_source <- rep(0, ncol(Z))
-    names(distances_2_source) <- colnames(cds)
-    nearest_edges <- matrix(rep(0, ncol(Z)*2), ncol = 2)
-    row.names(nearest_edges) <-  colnames(cds)
-    if(length(closest_vertex) < 1) warning('bad loop: length(closest_vertex) < 1')
-    
-    neighbor_map <- igraph::adjacent_vertices(dp_mst,
-                                            v=colnames(Y),
-                                            mode='all') %>% lapply(names)
-    
-    for(i in 1:length(closest_vertex)) { # This loop is going to be slow
-      neighbors <- neighbor_map[[closest_vertex_names[i]]]
-      projection <- NULL
-      deltas <- NULL
-      distance <- NULL
-      Z_i <- Z[, i]
-
-      for(neighbor in neighbors) {
-        point <- Z_i
-        V1 <- closest_vertex_names[i]
-        V2 <- neighbor
-        if (V1 < V2) {
-          A <- Y[, V1]
-          B <- Y[, V2]
-        } else {
-          A <- Y[, V2]
-          B <- Y[, V1]
-        }
-        clamp <- (V1 %in% tip_leaves) && !orthogonal_proj_tip
+  if(length(Z) < 1) warning('bad loop: length(Z) < 1')
+  P <- matrix(rep(0, length(Z)), nrow = nrow(Z)) #Y
+  if(length(Z[1:2, ]) < 1) warning('bad loop: length(Z[1:2, ]) < 1')
+  distances_2_source <- rep(0, ncol(Z))
+  names(distances_2_source) <- colnames(cds)
+  nearest_edges <- matrix(rep(0, ncol(Z)*2), ncol = 2)
+  row.names(nearest_edges) <-  colnames(cds)
+  if(length(closest_vertex) < 1) warning('bad loop: length(closest_vertex) < 1')
   
-        # vector from A to B
-        AB <- (B-A)
-        # squared distance from A to B
-        AB_squared = sum(AB^2)
-        if(AB_squared == 0) {
-          # A and B are the same point
-          unclamped_delta <- 0.0
-        }	else {
-          # vector from A to p
-          Ap <- (point-A)
-          # from http://stackoverflow.com/questions/849211/
-          # Consider the line extending the segment, parameterized as A + delta (B - A)
-          # We find projection of point p onto the line.
-          # It falls where delta = [(p-A) . (B-A)] / |B-A|^2
-          # delta <- max(0, min(1, sum(Ap * AB) / AB_squared))
-          unclamped_delta <- sum(Ap * AB) / AB_squared
-        }
-        clamped_delta <- max(0, min(1, unclamped_delta))
-        q <- A + clamped_delta * AB
-        projection <- rbind(projection, q)
-        # using the unclamped delta here means we can avoid discontinuities at steep turns
-        if (clamp) {
-          final_delta <- clamped_delta
-        } else {
-          final_delta <- unclamped_delta
-        }
-        deltas <- rbind(deltas, final_delta * sqrt(AB_squared))
-        # we still need the clamped delta (used to calc q) for correctly assigning edges though
-        distance <- c(distance, stats::dist(rbind(Z_i, q)))
-      }
-      if(class(projection)[1] != 'matrix') {
-        projection <- as.matrix(projection)
-      }
+  neighbor_map <- igraph::adjacent_vertices(dp_mst,
+                                          v=colnames(Y),
+                                          mode='all') %>% lapply(names)
+  
+  for(i in 1:length(closest_vertex)) { # This loop is going to be slow
+    neighbors <- neighbor_map[[closest_vertex_names[i]]]
+    projection <- NULL
+    deltas <- NULL
+    distance <- NULL
+    Z_i <- Z[, i]
 
-      which_min <- which.min(distance)
-
-      P[, i] <- projection[which_min, ]
-      distances_2_source[i] <- deltas[which_min]
-
+    for(neighbor in neighbors) {
+      point <- Z_i
       V1 <- closest_vertex_names[i]
-      V2 <- neighbors[which_min]
+      V2 <- neighbor
       if (V1 < V2) {
-        nearest_edges[i, ] <- c(V1, V2)
+        A <- Y[, V1]
+        B <- Y[, V2]
       } else {
-        nearest_edges[i, ] <- c(V2, V1)
+        A <- Y[, V2]
+        B <- Y[, V1]
       }
+      clamp <- (V1 %in% tip_leaves) && !orthogonal_proj_tip
+
+      # vector from A to B
+      AB <- (B-A)
+      # squared distance from A to B
+      AB_squared = sum(AB^2)
+      if(AB_squared == 0) {
+        # A and B are the same point
+        unclamped_delta <- 0.0
+      }	else {
+        # vector from A to p
+        Ap <- (point-A)
+        # from http://stackoverflow.com/questions/849211/
+        # Consider the line extending the segment, parameterized as A + delta (B - A)
+        # We find projection of point p onto the line.
+        # It falls where delta = [(p-A) . (B-A)] / |B-A|^2
+        # delta <- max(0, min(1, sum(Ap * AB) / AB_squared))
+        unclamped_delta <- sum(Ap * AB) / AB_squared
+      }
+      clamped_delta <- max(0, min(1, unclamped_delta))
+      q <- A + clamped_delta * AB
+      projection <- rbind(projection, q)
+      # using the unclamped delta here means we can avoid discontinuities at steep turns
+      if (clamp) {
+        final_delta <- clamped_delta
+      } else {
+        final_delta <- unclamped_delta
+      }
+      deltas <- rbind(deltas, final_delta * sqrt(AB_squared))
+      # we still need the clamped delta (used to calc q) for correctly assigning edges though
+      distance <- c(distance, stats::dist(rbind(Z_i, q)))
+    }
+    if(class(projection)[1] != 'matrix') {
+      projection <- as.matrix(projection)
+    }
+
+    which_min <- which.min(distance)
+
+    P[, i] <- projection[which_min, ]
+    distances_2_source[i] <- deltas[which_min]
+
+    V1 <- closest_vertex_names[i]
+    V2 <- neighbors[which_min]
+    if (V1 < V2) {
+      nearest_edges[i, ] <- c(V1, V2)
+    } else {
+      nearest_edges[i, ] <- c(V2, V1)
     }
   }
 
