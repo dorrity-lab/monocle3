@@ -398,11 +398,10 @@ multi_component_RGE <- function(cds,
     medioids <- X_subset[, tmp$rowname]
 
     reduced_dim_res <- t(medioids)
-    graph_args <- list(X = X_subset, C0 = medioids, maxiter = maxiter,
-                       eps = eps, L1.gamma = L1.gamma, L1.sigma = L1.sigma,
-                       verbose = verbose)
 
-    rge_res <- do.call(calc_principal_graph, graph_args)
+    rge_res <- calc_principal_graph(X = X_subset, C0 = medioids, maxiter = maxiter,
+                                    eps = eps, L1.gamma = L1.gamma, L1.sigma = L1.sigma,
+                                    verbose = verbose)
 
     names(rge_res)[c(2, 4, 5)] <- c('Y', 'R','objective_vals')
     stree <- rge_res$W
@@ -937,12 +936,15 @@ calc_principal_graph <- function(X, C0,
                                  verbose = TRUE) {
 
   C <- C0;
+  N <- ncol(X)
   K <- ncol(C)
+  norm_X_sq <- matrix(colSums(X^2), nrow=N, ncol=K)
+  mat_N_K <- matrix(0, nrow=N, ncol=K)
   objs <- c()
   if(maxiter < 1) warning('bad loop: maxiter < 1')
   for(iter in 1:maxiter) {
     #this part calculates the cost matrix Phi
-    norm_sq <- repmat(t(colSums(C^2)), K, 1)
+    norm_sq <- matrix(t(colSums(C^2)), nrow=K, ncol=K, byrow=T)
     Phi <- norm_sq + t(norm_sq) - 2 * t(C) %*% C
 
     g <- igraph::graph.adjacency(Phi, mode = 'lower', diag = TRUE, weighted = TRUE)
@@ -957,9 +959,25 @@ calc_principal_graph <- function(X, C0,
     W <- stree != 0
     obj_W <- sum(sum(stree))
 
-    res = soft_assignment(X, C, L1.sigma)
-    P <- res$P
-    obj_P <- res$obj
+    # inlined for performance
+    #' Function to calculate the third term in the objective function
+    #' @param X input data
+    #' @param C center of graph (D * K)
+    #' @param sigma bandwidth parameter
+    #' @return a matrix with diagonal element as 1 while other elements as zero
+    #'   (eye matrix)
+    #soft_assignment <- function(X, C, L1.sigma){
+    mat_N_K[,] <- norm_X_sq + matrix(t(colSums(C^2)), nrow=N, ncol=K, byrow=T) - 2 * t(X) %*% C
+    
+    # %% handle numerical problems 0/0 for P
+    min_dist <- matrixStats::rowMins(mat_N_K, useNames=F)
+    
+    mat_N_K[,] <- exp(- (mat_N_K - min_dist) / L1.sigma)
+    rowSums_Phi_XC <- rowSums(mat_N_K)
+    mat_N_K[,] <- mat_N_K / rowSums_Phi_XC
+    
+    obj_P <- - L1.sigma * sum( log(rowSums_Phi_XC)
+                          - min_dist/ L1.sigma );
 
     obj <- obj_W + L1.gamma * obj_P
     objs = c(objs, obj)
@@ -979,54 +997,11 @@ calc_principal_graph <- function(X, C0,
       }
     }
 
-    C <- generate_centers(X, W, P, L1.gamma)
+    C <- generate_centers(X, W, mat_N_K, L1.gamma)
 
   }
 
-  return(list(X = X, C = C, W = W, P = P, objs = objs))
-}
-
-
-#' function to reproduce the behavior of repmat function in matlab to replicate
-#' and tile an matrix
-#' @param X matrix for tiling and replicate the data
-#' @param m a numeric value for tiling a matrix
-#' @param n a numeric value for tiling a matrix
-#' @return a matrix
-repmat = function(X,m,n){
-  ##R equivalent of repmat (matlab)
-  mx = dim(X)[1]
-  nx = dim(X)[2]
-  matrix(t(matrix(X,mx,nx*n)),mx*m,nx*n,byrow=TRUE)
-}
-
-
-
-#' Function to calculate the third term in the objective function
-#' @param X input data
-#' @param C center of graph (D * K)
-#' @param sigma bandwidth parameter
-#' @return a matrix with diagonal element as 1 while other elements as zero
-#'   (eye matrix)
-soft_assignment <- function(X, C, sigma){
-
-  D <- nrow(X); N <- ncol(X)
-  K <- ncol(C)
-  norm_X_sq <- repmat(t(t(colSums(X^2))), 1, K);
-  norm_C_sq <- repmat(t(colSums(C^2)), N, 1);
-  dist_XC <- norm_X_sq + norm_C_sq - 2 * t(X) %*% C
-
-  # %% handle numerical problems 0/0 for P
-  min_dist <- apply(dist_XC, 1, min) #rowMin(dist_XC)
-
-  dist_XC <- dist_XC - repmat(t(t(min_dist)), 1, K )
-  Phi_XC <- exp(- dist_XC / sigma)
-  P <- Phi_XC / repmat(t(t(rowSums(Phi_XC))), 1, K)
-
-  obj <- - sigma * sum( log( rowSums( exp(- dist_XC/sigma)) )
-                        - min_dist/ sigma );
-
-  return(list(P = P, obj = obj))
+  return(list(X = X, C = C, W = W, P = mat_N_K, objs = objs))
 }
 
 #' Function to reproduce the behavior of eye function in matlab
@@ -1038,8 +1013,6 @@ soft_assignment <- function(X, C, sigma){
 #' @return A matrix C for the centers for principal graph
 #'
 generate_centers <- function(X, W, P, param.gamma){
-  D <- nrow(X); N <- nrow(X)
-  K <- ncol(W)
   # prevent singular
   Q <- 2 *( diag(colSums(W)) - W ) + param.gamma * diag(colSums(P))
   B <-  param.gamma * X %*% P;
